@@ -103,6 +103,20 @@ class Builder:
             "-DAPPLE_FRAMEWORK=ON",
             "-DCMAKE_INSTALL_PREFIX=install",
             "-DCMAKE_BUILD_TYPE=Release",
+
+            "-DBUILD_opencv_features2d=ON",
+            "-DBUILD_opencv_calib3d=ON",
+
+            "-DBUILD_opencv_gpu=OFF",
+            "-DBUILD_opencv_shape=OFF",
+            "-DBUILD_opencv_contrib=OFF",
+            "-DBUILD_opencv_legacy=OFF",
+            "-DBUILD_opencv_nonfree=OFF",
+            "-DBUILD_opencv_objdetect=OFF",
+            "-DBUILD_opencv_photo=OFF",
+            "-DBUILD_opencv_stitching=OFF",
+            "-DBUILD_opencv_video=OFF",
+            "-DBUILD_opencv_videostab=OFF"
         ]
         return args
 
