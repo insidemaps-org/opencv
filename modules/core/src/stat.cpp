@@ -4066,7 +4066,32 @@ int normHamming(const uchar* a, const uchar* b, int n)
 {
     int i = 0;
     int result = 0;
-#if CV_NEON
+#if false
+
+	typedef unsigned long long pop_t;
+	const size_t modulo = n % sizeof(pop_t);
+	const pop_t* a2 = reinterpret_cast<const pop_t*> (a);
+	const pop_t* b2 = reinterpret_cast<const pop_t*> (b);
+	const pop_t* a2_end = a2 + (n / sizeof(pop_t));
+
+	for (; a2 != a2_end; ++a2, ++b2) result += __builtin_popcountll((*a2) ^ (*b2));
+
+	if (modulo) {
+		const bool aligned = (((uintptr_t)a & 7) == 0) && (((uintptr_t)b & 7) == 0);
+
+		if(aligned) {
+			const pop_t x = (*a2) ^ (*b2);
+			const pop_t mask = (~(pop_t) 0) >> 8*(8-modulo);
+			result += __builtin_popcountll(x & mask);
+		} else {
+			pop_t a_final = 0, b_final = 0;
+			memcpy(&a_final, a2, modulo);
+			memcpy(&b_final, b2, modulo);
+			result += __builtin_popcountll(a_final ^ b_final);
+		}
+	}
+	return result;
+#elif CV_NEON
     {
         uint32x4_t bits = vmovq_n_u32(0);
         for (; i <= n - 16; i += 16) {

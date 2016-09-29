@@ -45,6 +45,8 @@
 #include <ctype.h>
 #include <deque>
 #include <iterator>
+#include "json.h"
+#include "json.c"
 
 #define USE_ZLIB 1
 
@@ -66,10 +68,15 @@
 #  endif
 #  include <zlib.h>
 #endif
+#define CV_STORAGE_FORMAT_JSON  (CV_STORAGE_FORMAT_XML | CV_STORAGE_FORMAT_YAML)
 
+     
 /****************************************************************************************\
 *                            Common macros and type definitions                          *
 \****************************************************************************************/
+
+ CV_IMPL CvTypeInfo*
+ cvFindTypeX( const char* type_name, int len=-1 );
 
 #define cv_isprint(c)     ((uchar)(c) >= (uchar)' ')
 #define cv_isprint_or_tab(c)  ((uchar)(c) >= (uchar)' ' || (c) == '\t')
@@ -239,22 +246,78 @@ typedef struct CvFileStorage
     std::deque<char>* outbuf;
 
     bool is_opened;
+    
+    json_printer json_printer_context;
 }
 CvFileStorage;
 
-static void icvPuts( CvFileStorage* fs, const char* str )
+static void icvPuts( CvFileStorage* fs, const char* str, int len=-1)
 {
-    if( fs->outbuf )
-        std::copy(str, str + strlen(str), std::back_inserter(*fs->outbuf));
-    else if( fs->file )
-        fputs( str, fs->file );
+	if (len < 0) len = strlen(str);
+    if( fs->outbuf ) {
+        std::copy(str, str + len, std::back_inserter(*fs->outbuf));
+    } else if( fs->file ) {
+        //fputs( str, fs->file );
+    	fwrite(str,1,len,fs->file);
 #if USE_ZLIB
-    else if( fs->gzfile )
-        gzputs( fs->gzfile, str );
+    } else if( fs->gzfile ) {
+        gzwrite(fs->gzfile, str,len );
 #endif
-    else
+    } else {
         CV_Error( CV_StsError, "The storage is not opened" );
+	}
 }
+
+#if 1
+static char* icvGetsX( CvFileStorage* fs, char* str, int maxCount,int* pCount=0 )
+{
+	if (maxCount <= 0) return 0;
+    if( fs->strbuf )
+    {
+        size_t i = fs->strbufpos, len = fs->strbufsize;
+        int j = 0;
+        const char* instr = fs->strbuf;
+        while( i < len && j < maxCount-1 )
+        {
+            char c = instr[i++];
+            if( c == '\0' )
+                break;
+            str[j++] = c;
+            if( c == '\n' )
+                break;
+        }
+        if (pCount) *pCount = j;
+        str[j++] = '\0';
+        fs->strbufpos = i;
+        return j > 1 ? str : 0;
+    }
+    if( fs->file ) {
+    	int len = fread(str,1,maxCount-1,fs->file );
+    	if (len > 0) {
+			str[len] = '\0';
+			if (pCount)  *pCount = len;
+			return str;
+    	} else {
+    		return 0;
+    	}
+#if USE_ZLIB
+    }
+    if( fs->gzfile ) {
+    	int len = gzread(fs->gzfile, str, maxCount-1 );
+    	if (len >= 0) {
+			str[len] = '\0';
+			if (pCount)  *pCount = len;
+			return str;
+    	} else {
+    		return 0;
+    	}
+#endif
+    }
+    CV_Error( CV_StsError, "The storage is not opened" );
+    return 0;
+}
+
+#endif
 
 static char* icvGets( CvFileStorage* fs, char* str, int maxCount )
 {
@@ -530,8 +593,17 @@ icvClose( CvFileStorage* fs, cv::String* out )
             icvFSFlush(fs);
             if( fs->fmt == CV_STORAGE_FORMAT_XML )
                 icvPuts( fs, "</opencv_storage>\n" );
+//#ifdef HAVE_LIBJSON
+            if (fs->fmt == CV_STORAGE_FORMAT_JSON)
+            {
+            	json_print_raw(&fs->json_printer_context,JSON_OBJECT_END,0,0);
+
+            }
+//#endif //#ifdef HAVE_LIBJSON
+
         }
 
+        json_print_free(&fs->json_printer_context);
         icvCloseFile(fs);
     }
 
@@ -2644,6 +2716,445 @@ icvXMLWriteComment( CvFileStorage* fs, const char* comment, int eol_comment )
 
 
 /****************************************************************************************\
+*                                       JSON Emitter                                      *
+\****************************************************************************************/
+
+//#ifdef HAVE_LIBJSON
+
+
+typedef struct CvJSONStackRecord
+{
+    CvMemStoragePos pos;
+    int struct_indent;
+    int struct_flags;
+
+}
+CvJSONStackRecord;
+
+
+
+
+typedef struct {
+	CvFileStorage* fs;
+	std::vector<CvFileNode*> stack;
+	const char* last_key;
+	int last_key_len;
+	char key_data[100];
+} icvJSONXParserCallbackStruct;
+
+
+static  CvFileNode*  addNodeToParent(icvJSONXParserCallbackStruct* userdata) {
+	CvFileNode* node=0;
+	if (userdata->stack.size() > 0) {
+		CvFileNode* parent_node = *(userdata->stack.rbegin());
+	    //node->tag = CV_NODE_NONE;
+	    //icvFSCreateCollection(fs,CV_NODE_SEQ,node);
+		//node = 0;
+		if (CV_NODE_IS_MAP(parent_node->tag)) {
+            const CvStringHashNode* str_hash_node = cvGetHashedKey( userdata->fs, userdata->last_key, userdata->last_key_len, 1 );
+            node = cvGetFileNode(userdata->fs,parent_node,str_hash_node,1);
+		} else {
+			node = (CvFileNode*)cvSeqPush( parent_node->data.seq, 0 );
+		}
+	} else {
+		node = (CvFileNode*)cvSeqPush( userdata->fs->roots, 0 );
+	}
+    memset( node, 0, sizeof(*node) );
+    return node;
+}
+
+
+int icvJSONXParseCallback(void *userdata_, int type, const char *data, uint32_t length);
+int icvJSONXParseCallback(void *userdata_, int type, const char *data, uint32_t length)
+{
+	icvJSONXParserCallbackStruct* userdata = (icvJSONXParserCallbackStruct*)userdata_;
+	/*
+    enum json_type type = json_object_get_type(jsonObj);
+
+    switch(type) {
+    case json_type_boolean:
+        node->tag = CV_NODE_INTEGER;
+        node->data.i = json_object_get_boolean(jsonObj);
+        break;
+    case json_type_double:
+        node->tag = CV_NODE_FLOAT;
+        node->data.f = json_object_get_double(jsonObj);
+        break;
+    case json_type_int:
+        node->tag = CV_NODE_INTEGER;
+        node->data.i = json_object_get_int(jsonObj);
+        break;
+    case json_type_object:
+        {
+            node->tag = CV_NODE_NONE;
+            int tag = CV_NODE_MAP;
+            struct json_object*  typeidobj = json_object_object_get(jsonObj,"_typeid");
+            if (typeidobj) {
+                const char* typeidstr = json_object_get_string(typeidobj);
+                if (typeidstr) {
+                    node->info = cvFindType( typeidstr );
+                    if (node->info) {
+                        tag |= CV_NODE_USER;
+                    }
+                }
+            }
+            icvFSCreateCollection(fs,tag,node);
+            json_object_object_foreach(jsonObj,key,jsonChild) {
+                const CvStringHashNode* str_hash_node = cvGetHashedKey( fs, key, -1, 1 );
+                CvFileNode* childNode = cvGetFileNode(fs,node,str_hash_node,1);
+                icvJsonParseValue(fs,jsonChild,childNode,0,0);
+            }
+        }
+        break;
+    case json_type_array:
+        {
+            node->tag = CV_NODE_NONE;
+            icvFSCreateCollection(fs,CV_NODE_SEQ,node);
+            int len = json_object_array_length(jsonObj);
+            for (int i = 0;i < len;i++) {
+                struct json_object* jsonChild = json_object_array_get_idx(jsonObj,i);
+                CvFileNode* childNode = (CvFileNode*)cvSeqPush( node->data.seq, 0 );
+                icvJsonParseValue(fs,jsonChild,childNode,0,0);
+            }
+        }
+        break;
+    case json_type_string:
+        node->tag = CV_NODE_STRING;
+        node->data.str = cvMemStorageAllocString ( fs->memstorage, json_object_get_string(jsonObj),-1);
+        break;
+
+    case json_type_null:
+    default :
+        break;
+
+    }
+
+*/
+
+	switch (type) {
+	case JSON_OBJECT_BEGIN:
+		{
+			CvFileNode* node = addNodeToParent(userdata);
+			node->tag = CV_NODE_NONE;
+			int tag = CV_NODE_MAP;
+			icvFSCreateCollection(userdata->fs,tag,node);
+			userdata->stack.push_back(node);
+		}
+        break;
+
+	case JSON_ARRAY_BEGIN:
+		{
+			CvFileNode* node = addNodeToParent(userdata);
+			node->tag = CV_NODE_NONE;
+			int tag = CV_NODE_SEQ;
+			icvFSCreateCollection(userdata->fs,tag,node);
+			userdata->stack.push_back(node);
+		}
+		break;
+
+	case JSON_OBJECT_END:
+	case JSON_ARRAY_END:
+		userdata->stack.pop_back();
+		break;
+	case JSON_KEY:
+		{
+			CV_Assert(length+1 < sizeof(userdata->key_data));
+			memcpy(userdata->key_data, data, length);
+			userdata->key_data[length] = '\0';
+			userdata->last_key = userdata->key_data;
+			userdata->last_key_len = length;
+		}
+		break;
+	case JSON_STRING:
+		if (userdata->last_key !=0 && strcmp(userdata->last_key,"_typeid") == 0) {
+			CvFileNode* node = *(userdata->stack.rbegin());
+			node->info = cvFindTypeX( data,length );
+			if (node->info) {
+				node->tag |= CV_NODE_USER;
+			}
+		} else {
+			CvFileNode* node = addNodeToParent(userdata);
+	        node->tag = CV_NODE_STRING;
+	        node->data.str = cvMemStorageAllocString ( userdata->fs->memstorage, data,length);
+		}
+		break;
+	case JSON_INT:
+		{
+			CvFileNode* node = addNodeToParent(userdata);
+			node->tag = CV_NODE_INTEGER;
+			int i = atoi(data);
+			node->data.i = i;
+		}
+		break;
+
+	case JSON_FLOAT:
+		{
+			CvFileNode* node = addNodeToParent(userdata);
+			node->tag = CV_NODE_FLOAT;
+			double f = atof(data);
+			node->data.f = f;
+			break;
+		}
+		break;
+
+	case JSON_TRUE:
+	case JSON_FALSE:
+		{
+			CvFileNode* node = addNodeToParent(userdata);
+			node->tag = CV_NODE_INTEGER;
+			int i = type == JSON_TRUE ? 1 : 0;
+			node->data.i = i;
+		}
+		break;
+
+	case JSON_NULL:
+		break;
+	}
+
+	if (type != JSON_KEY) {
+		userdata->last_key = 0;
+		userdata->last_key_len = 0;
+	}
+	return 0;
+}
+
+static void icvJSONXParse( CvFileStorage* fs) {
+
+	json_parser json_parser_contex;
+	json_config config;
+	memset(&config,0,sizeof(config));
+
+    icvJSONXParserCallbackStruct userdata;
+    userdata.fs = fs;
+
+    config.allow_c_comments = 1;
+
+    config.max_data = 2048;
+    config.max_nesting = 20;
+    config.user_calloc = calloc;
+    config.user_realloc = realloc;
+    config.buffer_initial_size = 2048;
+    json_parser_init(&json_parser_contex,&config,icvJSONXParseCallback,(void*)&userdata);
+
+
+  char* ptr = 0;
+  do {
+      char buf[10*1024];
+      int count;
+      ptr = icvGetsX(fs,buf,sizeof(buf),&count);
+      if (ptr != 0) {
+          int len = count;//strlen(ptr);
+
+          while (len > 0) {
+        	  uint32_t processed=0;
+        	  int res = json_parser_string(&json_parser_contex,ptr,len,&processed);
+        	  CV_Assert((int)processed <= len);
+        	  int parser_is_done = json_parser_is_done(&json_parser_contex);
+        	  if (parser_is_done || res != 0) break;
+        	  if (res != 0) {
+        		  break;
+        	  }
+        	  len-=processed;
+        	  ptr+=processed;
+          }
+      }
+  } while (ptr != 0);
+
+  json_parser_free(&json_parser_contex);
+
+}
+
+
+
+
+
+
+
+static char* icvJSONXFlush( CvFileStorage* fs )
+{
+    //return string;
+    return fs->buffer_start;
+}
+
+static void
+icvJSONXStartWriteStruct( CvFileStorage* fs, const char* key, int struct_flags,
+                        const char* type_name CV_DEFAULT(0))
+{
+
+    struct_flags = (struct_flags & (CV_NODE_TYPE_MASK|CV_NODE_FLOW)) | CV_NODE_EMPTY;
+    if( !CV_NODE_IS_COLLECTION(struct_flags))
+        CV_Error( CV_StsBadArg,
+        "Some collection type: CV_NODE_SEQ or CV_NODE_MAP must be specified" );
+
+    int keylen = 0;
+    if (key == 0) {
+
+    } else {
+    	keylen = (int)strlen(key);
+        for(int i = 0; i < keylen; i++ )
+        {
+            char c = key[i];
+            if( !cv_isalnum(c) && c != '_' && c != '-' )
+                CV_Error( CV_StsBadArg, "Key name may only contain alphanumeric characters [a-zA-Z0-9], '-' and '_'" );
+        }
+        if( !cv_isalpha(key[0]) && key[0] != '_' )
+            CV_Error( CV_StsBadArg, "Key should start with a letter or _" );
+
+    }
+
+    if (key != 0 && keylen > 0) {
+    	json_print_raw(&fs->json_printer_context,JSON_KEY,key,keylen);
+    }
+
+    if (CV_NODE_IS_SEQ(struct_flags)) {
+    	json_print_raw(&fs->json_printer_context,JSON_ARRAY_BEGIN,0,0);
+    } else if (CV_NODE_IS_MAP(struct_flags)) {
+    	json_print_raw(&fs->json_printer_context,JSON_OBJECT_BEGIN,0,0);
+        if( type_name )
+        {
+        	json_print_raw(&fs->json_printer_context,JSON_KEY,"_typeid",7);
+        	int typestrlen = strlen(type_name);
+        	json_print_raw(&fs->json_printer_context,JSON_STRING,type_name,typestrlen);
+        }
+    } else {
+        CV_Error( CV_StsBadArg, "Bad" );
+    }
+
+    CvJSONStackRecord parent;
+    parent.struct_flags = fs->struct_flags & ~CV_NODE_EMPTY;
+    //cvSaveMemStoragePos( fs->strstorage, &parent.pos );
+    cvSeqPush( fs->write_stack, &parent );
+    fs->struct_flags = struct_flags;
+}
+
+
+static void
+icvJSONXEndWriteStruct( CvFileStorage* fs )
+{
+    CvJSONStackRecord parent;
+
+    if( fs->write_stack->total == 0 )
+        CV_Error( CV_StsError, "An extra closing tag" );
+    int struct_flags = fs->struct_flags;
+    struct_flags = (struct_flags & (CV_NODE_TYPE_MASK|CV_NODE_FLOW)) | CV_NODE_EMPTY;
+    if( !CV_NODE_IS_COLLECTION(struct_flags))
+        CV_Error( CV_StsBadArg,
+        "Some collection type: CV_NODE_SEQ or CV_NODE_MAP must be specified" );
+
+    cvSeqPop( fs->write_stack, &parent );
+
+    fs->struct_flags = parent.struct_flags;
+    //cvRestoreMemStoragePos( fs->strstorage, &parent.pos );
+    if (CV_NODE_IS_SEQ(struct_flags)) {
+    	json_print_raw(&fs->json_printer_context,JSON_ARRAY_END,0,0);
+    } else if (CV_NODE_IS_MAP(struct_flags)) {
+    	json_print_raw(&fs->json_printer_context,JSON_OBJECT_END,0,0);
+    }
+
+    if( fs->write_stack->total == 0 )
+    {
+    }
+}
+
+
+static void
+icvJSONXStartNextStream( CvFileStorage* fs )
+{
+    if( !fs->is_first )
+    {
+        while( fs->write_stack->total > 0 )
+            icvJSONXEndWriteStruct(fs);
+
+        fs->struct_indent = 0;
+        icvJSONXFlush(fs);
+        /* JSON does not allow multiple top-level elements,
+           so we just put a comment and continue
+           the current (and the only) "stream" */
+        //icvPuts( fs, "\n<!-- next stream -->\n" );
+        /*fputs( "</opencv_storage>\n", fs->file );
+        fputs( "<opencv_storage>\n", fs->file );*/
+        fs->buffer = fs->buffer_start;
+    }
+}
+
+
+static void
+icvJSONXWriteInt( CvFileStorage* fs, const char* key, int value )
+{
+	char buf[200];
+	int len = sprintf(buf,"%d",value);
+	if (key !=0 && key[0] != '\0') {
+		int keylen = strlen(key);
+		json_print_raw(&fs->json_printer_context,JSON_KEY,key,keylen);
+	}
+	json_print_raw(&fs->json_printer_context,JSON_INT,buf,len);
+}
+
+
+static void
+icvJSONXWriteDouble( CvFileStorage* fs, const char* key, double value )
+{
+	char buf[200];
+	int len = sprintf(buf,"%.25g",value);
+	if (key != 0 && key[0] != '\0') {
+		int keylen = strlen(key);
+		json_print_raw(&fs->json_printer_context,JSON_KEY,key,keylen);
+	}
+	json_print_raw(&fs->json_printer_context,JSON_FLOAT,buf,len);
+}
+
+static void
+icvJSONXWriteFloat( CvFileStorage* fs, const char* key, float value )
+{
+	char buf[200];
+	int len = sprintf(buf,"%.10g",value);
+	//icvFloatToString(buf,value);
+	//int len = strlen(buf);
+	if (key != 0 && key[0] != '\0') {
+		int keylen = strlen(key);
+		json_print_raw(&fs->json_printer_context,JSON_KEY,key,keylen);
+	}
+	json_print_raw(&fs->json_printer_context,JSON_FLOAT,buf,len);
+}
+
+
+static void
+icvJSONXWriteString( CvFileStorage* fs, const char* key, const char* str, int /*quote*/ )
+{
+	if (key != 0 && key[0] != '\0') {
+		int keylen = strlen(key);
+		json_print_raw(&fs->json_printer_context,JSON_KEY,key,keylen);
+	}
+	int slen = strlen(str);
+	json_print_raw(&fs->json_printer_context,JSON_STRING,str,slen);
+}
+
+
+static void
+icvJSONXWriteComment( CvFileStorage* /*fs*/, const char* /*comment*/, int /*eol_comment*/ )
+{
+    //JSON doesn't have comments
+
+}
+
+
+
+static int
+icvJSONXPrinterCallback(void *userdata, const char *s, uint32_t length) {
+	CvFileStorage* fs = (CvFileStorage*)userdata;
+	icvPuts(fs,s,length);
+	return 1;
+}
+
+
+
+
+
+//#endif //#ifdef HAVE_LIBJSON
+
+
+
+/****************************************************************************************\ 
 *                              Common High-Level Functions                               *
 \****************************************************************************************/
 
@@ -2739,6 +3250,13 @@ cvOpenFileStorage( const char* filename, CvMemStorage* dststorage, int flags, co
             fs->fmt = (dot_pos >= filename && (memcmp( dot_pos, ".xml", 4) == 0 ||
                     memcmp(dot_pos, ".XML", 4) == 0 || memcmp(dot_pos, ".Xml", 4) == 0)) ?
                 CV_STORAGE_FORMAT_XML : CV_STORAGE_FORMAT_YAML;
+		
+
+            if (fs->fmt == CV_STORAGE_FORMAT_YAML) {
+                dot_pos = filename + fnamelen - (isGZ ? 8 : 5);
+                fs->fmt = (dot_pos >= filename && (memcmp( dot_pos, ".json", 5) == 0 )) ?
+                    CV_STORAGE_FORMAT_JSON : CV_STORAGE_FORMAT_YAML;
+            }
         }
         else
             fs->fmt = fmt != CV_STORAGE_FORMAT_AUTO ? fmt : CV_STORAGE_FORMAT_XML;
@@ -2749,8 +3267,9 @@ cvOpenFileStorage( const char* filename, CvMemStorage* dststorage, int flags, co
 
         if( append )
             fseek( fs->file, 0, SEEK_END );
-
-        fs->write_stack = cvCreateSeq( 0, sizeof(CvSeq), fs->fmt == CV_STORAGE_FORMAT_XML ?
+	
+	//fs->write_stack = cvCreateSeq( 0, sizeof(CvSeq), fs->fmt == CV_STORAGE_FORMAT_XML ?
+	fs->write_stack = cvCreateSeq( 0, sizeof(CvSeq), (fs->fmt & CV_STORAGE_FORMAT_XML) != 0 ?      
                 sizeof(CvXMLStackRecord) : sizeof(int), fs->memstorage );
         fs->is_first = 1;
         fs->struct_indent = 0;
@@ -2829,6 +3348,24 @@ cvOpenFileStorage( const char* filename, CvMemStorage* dststorage, int flags, co
             fs->write_comment = icvXMLWriteComment;
             fs->start_next_stream = icvXMLStartNextStream;
         }
+        
+//#ifdef HAVE_LIBJSON
+        else if( fs->fmt == CV_STORAGE_FORMAT_JSON ) {
+            fs->start_write_struct = icvJSONXStartWriteStruct;
+            fs->end_write_struct = icvJSONXEndWriteStruct;
+            fs->write_int = icvJSONXWriteInt;
+            fs->write_real = icvJSONXWriteDouble;
+            fs->write_string = icvJSONXWriteString;
+            fs->write_comment = icvJSONXWriteComment;
+            fs->start_next_stream = icvJSONXStartNextStream;
+
+            json_print_init(&fs->json_printer_context,icvJSONXPrinterCallback,fs);
+
+            json_print_raw(&fs->json_printer_context,JSON_OBJECT_BEGIN,0,0);
+            icvPuts(fs," ",1);
+        }
+//#endif // #ifdef HAVE_LIBJSON
+        
         else
         {
             if( !append )
@@ -2854,10 +3391,18 @@ cvOpenFileStorage( const char* filename, CvMemStorage* dststorage, int flags, co
 
         size_t buf_size = 1 << 20;
         const char* yaml_signature = "%YAML:";
+	const char* json_signature = "{ ";
         char buf[16];
         icvGets( fs, buf, sizeof(buf)-2 );
-        fs->fmt = strncmp( buf, yaml_signature, strlen(yaml_signature) ) == 0 ?
-            CV_STORAGE_FORMAT_YAML : CV_STORAGE_FORMAT_XML;
+        //fs->fmt = strncmp( buf, yaml_signature, strlen(yaml_signature) ) == 0 ?
+        //    CV_STORAGE_FORMAT_YAML : CV_STORAGE_FORMAT_XML;
+       if (strncmp( buf, yaml_signature, strlen(yaml_signature) ) == 0) {
+            fs->fmt = CV_STORAGE_FORMAT_YAML;
+        } else if (strncmp(buf,json_signature,strlen(json_signature)) == 0) {
+            fs->fmt = CV_STORAGE_FORMAT_JSON;
+        } else {
+            fs->fmt = CV_STORAGE_FORMAT_XML;
+        }
 
         if( !isGZ )
         {
@@ -2890,6 +3435,8 @@ cvOpenFileStorage( const char* filename, CvMemStorage* dststorage, int flags, co
         {
             if( fs->fmt == CV_STORAGE_FORMAT_XML )
                 icvXMLParse( fs );
+            else if (fs->fmt == CV_STORAGE_FORMAT_JSON)
+                icvJSONXParse(fs);
             else
                 icvYMLParse( fs );
         }
@@ -3131,6 +3678,50 @@ cvWriteRawData( CvFileStorage* fs, const void* _data, int len, const char* dt )
 
             for( i = 0; i < count; i++ )
             {
+//#ifdef HAVE_LIBJSON
+                if( fs->fmt == CV_STORAGE_FORMAT_JSON ) {
+                    switch( elem_type )
+                    {
+                    case CV_8U:
+                        icvJSONXWriteInt(fs,0,*(uchar*)data);
+                        data++;
+                        break;
+                    case CV_8S:
+                        icvJSONXWriteInt(fs,0,*(char*)data);
+                        data++;
+                        break;
+                    case CV_16U:
+                        icvJSONXWriteInt(fs,0,*(ushort*)data);
+                        data += sizeof(ushort);
+                        break;
+                    case CV_16S:
+                        icvJSONXWriteInt(fs,0,*(short*)data);
+                        data += sizeof(short);
+                        break;
+                    case CV_32S:
+                        icvJSONXWriteInt(fs,0,*(int*)data);
+                        data += sizeof(int);
+                        break;
+                    case CV_32F:
+                        icvJSONXWriteFloat(fs,0,*(float*)data);
+                        data += sizeof(float);
+                        break;
+                    case CV_64F:
+                        icvJSONXWriteDouble(fs,0,*(double*)data);
+                        data += sizeof(double);
+                        break;
+                    case CV_USRTYPE1: /* reference */
+                        icvJSONXWriteInt(fs,0,(int)*(size_t*)data);
+                        data += sizeof(size_t);
+                        break;
+                    default:
+                        assert(0);
+                        return;
+                    }
+                } else {
+//#endif //HAVE_LIBJSON
+	      
+	      
                 switch( elem_type )
                 {
                 case CV_8U:
@@ -3177,6 +3768,9 @@ cvWriteRawData( CvFileStorage* fs, const void* _data, int len, const char* dt )
                 }
                 else
                     icvYMLWrite( fs, 0, ptr );
+//#ifdef HAVE_LIBJSON
+                }
+//#endif //#ifdef HAVE_LIBJSON
             }
 
             offset = (int)(data - data0);
@@ -4891,17 +5485,29 @@ cvFirstType( void )
 
 
 CV_IMPL CvTypeInfo*
-cvFindType( const char* type_name )
+cvFindTypeX( const char* type_name, int len )
 {
     CvTypeInfo* info = 0;
+    if (len <0) len = strlen(type_name);
 
     if (type_name)
       for( info = CvType::first; info != 0; info = info->next )
-        if( strcmp( info->type_name, type_name ) == 0 )
+        if( strncmp( info->type_name, type_name, len ) == 0 )
       break;
 
     return info;
 }
+
+
+
+CV_IMPL CvTypeInfo*
+cvFindType( const char* type_name)
+{
+	return cvFindTypeX(type_name,-1);
+}
+
+
+
 
 
 CV_IMPL CvTypeInfo*

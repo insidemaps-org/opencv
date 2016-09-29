@@ -92,6 +92,9 @@ protected:
         RNG& rng = ts->get_rng();
         RNG rng0;
         test_case_count = 4;
+//#ifdef HAVE_LIBJSON
+	test_case_count += 2; //if HAVE_JSON
+//#endif //HAVE_LIBJSON
         int progress = 0;
         MemStorage storage(cvCreateMemStorage(0));
 
@@ -102,8 +105,14 @@ protected:
 
             cvClearMemStorage(storage);
 
-            bool mem = (idx % 4) >= 2;
-            string filename = tempfile(idx % 2 ? ".yml" : ".xml");
+//#ifdef HAVE_LIBJSON
+	    bool mem = (idx % 2) >= 1; //HAVE_JSON
+            const char* ext[] = {".yml",".xml","json"};
+            string filename = tempfile(ext[idx / 2]);
+//#else //HAVE_LIBJSON = 0
+  //          bool mem = (idx % 4) >= 2;
+  //          string filename = tempfile(idx % 2 ? ".yml" : ".xml");
+//#endif //HAVE_LIBJSON
 
             FileStorage fs(filename, FileStorage::WRITE + (mem ? FileStorage::MEMORY : 0));
 
@@ -295,9 +304,23 @@ protected:
             }
 
             FileNode tl = fs["test_list"];
+	    
+            EXPECT_NEAR((double)tl[0],0.0000000000001,DBL_EPSILON);
+            EXPECT_EQ((int)tl[1],2);
+            EXPECT_NEAR((double)tl[2],CV_PI,DBL_EPSILON);
+            EXPECT_EQ( (int)tl[3],-3435345);
+            EXPECT_EQ((string)tl[4],"2-502 2-029 3egegeg");
+            EXPECT_EQ(tl[5].type(), FileNode::MAP);
+            EXPECT_EQ(tl[5].size(),3u);
+            EXPECT_EQ((int)tl[5]["month"],12);
+            EXPECT_EQ((int)tl[5]["day"],31);
+            EXPECT_EQ((int)tl[5]["year"],1969);
+	    
+	    
             if( tl.type() != FileNode::SEQ || tl.size() != 6 ||
-               fabs((double)tl[0] - 0.0000000000001) >= DBL_EPSILON ||
+               //fabs((double)tl[0] - 0.0000000000001) >= DBL_EPSILON ||
                (int)tl[1] != 2 ||
+               fabs((double)tl[0] - 0.0000000000001) >= DBL_EPSILON ||
                fabs((double)tl[2] - CV_PI) >= DBL_EPSILON ||
                (int)tl[3] != -3435345 ||
                (String)tl[4] != "2-502 2-029 3egegeg" ||

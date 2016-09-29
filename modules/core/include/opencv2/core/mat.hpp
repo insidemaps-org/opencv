@@ -1878,13 +1878,55 @@ public:
          - depth
          - number of channels
      */
-    int flags;
+    enum DepthEnum {
+        DEPTH_8U = 0,
+        DEPTH_8S = 1,
+        DEPTH_16U = 2,
+        DEPTH_16S = 3,
+        DEPTH_32I = 4,
+        DEPTH_32F = 5,
+        DEPTH_64F = 6,
+    };
+
+    union {
+
+        struct {
+            DepthEnum depth : 3;
+            unsigned int chn_minus1 : 9;
+            unsigned int _ : 2;
+            unsigned int cont : 1;
+            unsigned int issubmat : 1;
+        } flag;
+        int flags;
+    };
+
+
+
     //! the matrix dimensionality, >= 2
     int dims;
     //! the number of rows and columns or (-1, -1) when the matrix has more than 2 dimensions
     int rows, cols;
     //! pointer to the data
-    uchar* data;
+
+    union {
+
+        struct {
+            uchar u8_[10];
+        } * u8_;
+
+        struct {
+            int i32_[10];
+        } * i32_;
+
+        struct {
+            float f_[12];
+        } * f_;
+
+        struct {
+            double d_[12];
+        } * d_;
+        uchar* data;
+    };
 
     //! helper fields used in locateROI and adjustROI
     const uchar* datastart;
