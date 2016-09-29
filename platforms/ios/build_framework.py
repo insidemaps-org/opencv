@@ -128,6 +128,18 @@ class Builder:
             "-DAPPLE_FRAMEWORK=ON",
             "-DCMAKE_INSTALL_PREFIX=install",
             "-DCMAKE_BUILD_TYPE=Release",
+            "-DBUILD_opencv_features2d=ON",
+            "-DBUILD_opencv_calib3d=ON",
+            "-DBUILD_opencv_gpu=OFF",
+            "-DBUILD_opencv_shape=OFF",
+            "-DBUILD_opencv_contrib=OFF",
+            "-DBUILD_opencv_legacy=OFF",
+            "-DBUILD_opencv_nonfree=OFF",
+            "-DBUILD_opencv_objdetect=OFF",
+            "-DBUILD_opencv_photo=OFF",
+            "-DBUILD_opencv_stitching=OFF",
+            "-DBUILD_opencv_video=OFF",
+            "-DBUILD_opencv_videostab=OFF"
         ] + ([
             "-DBUILD_SHARED_LIBS=ON",
             "-DCMAKE_MACOSX_BUNDLE=ON",
@@ -137,6 +149,7 @@ class Builder:
         if len(self.exclude) > 0:
             args += ["-DBUILD_opencv_world=OFF"] if not self.dynamic else []
             args += ["-DBUILD_opencv_%s=OFF" % m for m in self.exclude]
+
 
         return args
 
