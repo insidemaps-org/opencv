@@ -47,7 +47,7 @@
 #include "grfmt_jpeg2000.hpp"
 #include "opencv2/imgproc.hpp"
 
-#ifdef WIN32
+#ifdef _WIN32
 #define JAS_WIN_MSVC_BUILD 1
 #ifdef __GNUC__
 #define HAVE_STDINT_H 1
@@ -160,7 +160,7 @@ bool  Jpeg2KDecoder::readData( Mat& img )
     jas_stream_t* stream = (jas_stream_t*)m_stream;
     jas_image_t* image = (jas_image_t*)m_image;
 
-#ifndef WIN32
+#ifndef _WIN32
     // At least on some Linux instances the
     // system libjasper segfaults when
     // converting color to grey.
@@ -272,7 +272,7 @@ bool  Jpeg2KDecoder::readData( Mat& img )
 
     close();
 
-#ifndef WIN32
+#ifndef _WIN32
     if (!clr.empty())
     {
         cv::cvtColor(clr, img, COLOR_BGR2GRAY);
@@ -525,7 +525,7 @@ bool  Jpeg2KEncoder::writeComponent16u( void *__img, const Mat& _img )
 
     for( int y = 0; y < h; y++ )
     {
-        const uchar* data = _img.ptr(y);
+        const ushort* data = _img.ptr<ushort>(y);
         for( int i = 0; i < ncmpts; i++ )
         {
             for( int x = 0; x < w; x++)

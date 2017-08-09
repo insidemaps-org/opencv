@@ -28,16 +28,6 @@ public:
     void workBegin();
     void workEnd();
     string workFps() const;
-    string message() const;
-
-
-// This function test if gpu_rst matches cpu_rst.
-// If the two vectors are not equal, it will return the difference in vector size
-// Else if will return
-// (total diff of each cpu and gpu rects covered pixels)/(total cpu rects covered pixels)
-    double checkRectSimilarity(Size sz,
-                               std::vector<Rect>& cpu_rst,
-                               std::vector<Rect>& gpu_rst);
 private:
     App operator=(App&);
 
@@ -68,18 +58,16 @@ private:
 int main(int argc, char** argv)
 {
     const char* keys =
-        "{ h help      | false          | print help message }"
+        "{ h help      |                | print help message }"
         "{ i input     |                | specify input image}"
         "{ c camera    | -1             | enable camera capturing }"
-        "{ v video     | ../data/768x576.avi | use video as input }"
-        "{ g gray      | false          | convert image to gray one or not}"
+        "{ v video     | ../data/vtest.avi | use video as input }"
+        "{ g gray      |                | convert image to gray one or not}"
         "{ s scale     | 1.0            | resize the image before detect}"
         "{ o output    |                | specify output path when input is images}";
     CommandLineParser cmd(argc, argv, keys);
     if (cmd.has("help"))
     {
-        cout << "Usage : hog [options]" << endl;
-        cout << "Available options:" << endl;
         cmd.printMessage();
         return EXIT_SUCCESS;
     }

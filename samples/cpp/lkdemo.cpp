@@ -1,7 +1,7 @@
 #include "opencv2/video/tracking.hpp"
-#include "opencv2/imgproc/imgproc.hpp"
-#include "opencv2/videoio/videoio.hpp"
-#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc.hpp"
+#include "opencv2/videoio.hpp"
+#include "opencv2/highgui.hpp"
 
 #include <iostream>
 #include <ctype.h>
@@ -45,16 +45,11 @@ int main( int argc, char** argv )
     bool needToInit = false;
     bool nightMode = false;
 
-    cv::CommandLineParser parser(argc, argv, "{@input||}{help h||}");
+    help();
+    cv::CommandLineParser parser(argc, argv, "{@input|0|}");
     string input = parser.get<string>("@input");
-    if (parser.has("help"))
-    {
-        help();
-        return 0;
-    }
-    if( input.empty() )
-        cap.open(0);
-    else if( input.size() == 1 && isdigit(input[0]) )
+
+    if( input.size() == 1 && isdigit(input[0]) )
         cap.open(input[0] - '0');
     else
         cap.open(input);
