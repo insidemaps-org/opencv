@@ -135,7 +135,7 @@ class Builder:
             "-DBUILD_opencv_contrib=OFF",
             "-DBUILD_opencv_legacy=OFF",
             "-DBUILD_opencv_nonfree=OFF",
-            "-DBUILD_opencv_objdetect=OFF",
+            "-DBUILD_opencv_objdetect=ON",
             "-DBUILD_opencv_photo=OFF",
             "-DBUILD_opencv_stitching=OFF",
             "-DBUILD_opencv_video=OFF",
@@ -171,7 +171,7 @@ class Builder:
         else:
             arch = ";".join(archs)
             buildcmd += [
-                "IPHONEOS_DEPLOYMENT_TARGET=6.0",
+                "IPHONEOS_DEPLOYMENT_TARGET=8.0",
                 "ARCHS=%s" % arch,
             ]
 
