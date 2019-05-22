@@ -10,7 +10,8 @@
   },
   "authors": "opencv.org",
   "source": {
-    "http": "https://github.com/insidemaps-org/opencv/releases/download/v3.3.1/opencv2-insidemaps-3-3.framework.zip"
+
+    "http": "https://github.com/insidemaps-org/opencv/releases/download/insideMaps-3.3.0-with-objdetect/opencv2.framework-94a731a0040a3620923fca6a5eb55a6ed658d1d0.zip"
   },
   "platforms": {
     "ios": "4.0"
