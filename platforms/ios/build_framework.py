@@ -140,7 +140,7 @@ class Builder:
             "-DBUILD_opencv_contrib=OFF",
             "-DBUILD_opencv_legacy=OFF",
             "-DBUILD_opencv_nonfree=OFF",
-            "-DBUILD_opencv_objdetect=OFF",
+            "-DBUILD_opencv_objdetect=ON",
             "-DBUILD_opencv_photo=OFF",
             "-DBUILD_opencv_stitching=OFF",
             "-DBUILD_opencv_video=OFF",
