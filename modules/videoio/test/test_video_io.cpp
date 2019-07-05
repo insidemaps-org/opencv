@@ -42,34 +42,35 @@
 
 #include "test_precomp.hpp"
 #include "opencv2/videoio/videoio_c.h"
-#include "opencv2/highgui.hpp"
-#include <cstdio>
 
-using namespace cv;
-using namespace std;
-using namespace std::tr1;
+namespace opencv_test
+{
 
 class Videoio_Test_Base
 {
 protected:
     string ext;
     string video_file;
+    VideoCaptureAPIs apiPref;
 protected:
     Videoio_Test_Base() {}
     virtual ~Videoio_Test_Base() {}
+    virtual void writeVideo() {}
     virtual void checkFrameContent(Mat &, int) {}
     virtual void checkFrameCount(int &) {}
     void checkFrameRead(int idx, VideoCapture & cap)
     {
         //int frameID = (int)cap.get(CAP_PROP_POS_FRAMES);
-        Mat img; cap >> img;
+        Mat img;
+        ASSERT_NO_THROW(cap >> img);
         //std::cout << "idx=" << idx << " img=" << img.size() << " frameID=" << frameID << std::endl;
         ASSERT_FALSE(img.empty()) << "idx=" << idx;
         checkFrameContent(img, idx);
     }
     void checkFrameSeek(int idx, VideoCapture & cap)
     {
-        bool canSeek = cap.set(CAP_PROP_POS_FRAMES, idx);
+        bool canSeek = false;
+        ASSERT_NO_THROW(canSeek = cap.set(CAP_PROP_POS_FRAMES, idx));
         if (!canSeek)
         {
             std::cout << "Seek to frame '" << idx << "' is not supported. SKIP." << std::endl;
@@ -81,14 +82,18 @@ protected:
 public:
     void doTest()
     {
-        VideoCapture cap(video_file);
+        if (!videoio_registry::hasBackend(apiPref))
+            throw SkipTestException(cv::String("Backend is not available/disabled: ") + cv::videoio_registry::getBackendName(apiPref));
+        writeVideo();
+        VideoCapture cap;
+        ASSERT_NO_THROW(cap.open(video_file, apiPref));
         if (!cap.isOpened())
         {
-            std::cout << "SKIP test: Can't open video: " << video_file << std::endl;
+            std::cout << "SKIP test: backend " << apiPref << " can't open the video: " << video_file << std::endl;
             return;
         }
-
-        int n_frames = (int)cap.get(CAP_PROP_FRAME_COUNT);
+        int n_frames = -1;
+        EXPECT_NO_THROW(n_frames = (int)cap.get(CAP_PROP_FRAME_COUNT));
         if (n_frames > 0)
         {
             ASSERT_GT(n_frames, 0);
@@ -102,33 +107,44 @@ public:
 
         {
             SCOPED_TRACE("consecutive read");
+            if (apiPref == CAP_GSTREAMER)
+            {
+                // This workaround is for GStreamer 1.3.1.1 and older.
+                // Old Gstreamer has a bug which handles the total duration 1 frame shorter
+                // Old Gstreamer are used in Ubuntu 14.04, so the following code could be removed after it's EOL
+                n_frames--;
+            }
             for (int k = 0; k < n_frames; ++k)
             {
                 checkFrameRead(k, cap);
             }
         }
-
-        bool canSeek = cap.set(CAP_PROP_POS_FRAMES, 0);
+        bool canSeek = false;
+        EXPECT_NO_THROW(canSeek = cap.set(CAP_PROP_POS_FRAMES, 0));
         if (!canSeek)
         {
             std::cout << "Seek to frame '0' is not supported. SKIP all 'seek' tests." << std::endl;
             return;
         }
 
-        if (ext != "wmv")
+        if (ext != "wmv" && ext != "h264" && ext != "h265")
         {
             SCOPED_TRACE("progressive seek");
-            ASSERT_TRUE(cap.set(CAP_PROP_POS_FRAMES, 0));
+            bool res = false;
+            EXPECT_NO_THROW(res = cap.set(CAP_PROP_POS_FRAMES, 0));
+            ASSERT_TRUE(res);
             for (int k = 0; k < n_frames; k += 20)
             {
                 checkFrameSeek(k, cap);
             }
         }
 
-        if (ext != "mpg" && ext != "wmv")
+        if (ext != "mpg" && ext != "wmv" && ext != "h264" && ext != "h265")
         {
             SCOPED_TRACE("random seek");
-            ASSERT_TRUE(cap.set(CAP_PROP_POS_FRAMES, 0));
+            bool res = false;
+            EXPECT_NO_THROW(res = cap.set(CAP_PROP_POS_FRAMES, 0));
+            ASSERT_TRUE(res);
             for (int k = 0; k < 10; ++k)
             {
                 checkFrameSeek(cvtest::TS::ptr()->get_rng().uniform(0, n_frames), cap);
@@ -138,71 +154,87 @@ public:
 };
 
 //==================================================================================================
+typedef tuple<string, VideoCaptureAPIs> Backend_Type_Params;
 
-class Videoio_Bunny : public Videoio_Test_Base, public testing::TestWithParam<string>
+class videoio_bunny : public Videoio_Test_Base, public testing::TestWithParam<Backend_Type_Params>
 {
+    BunnyParameters bunny_param;
 public:
-    Videoio_Bunny()
+    videoio_bunny()
     {
-        ext = GetParam();
-        video_file = cvtest::TS::ptr()->get_data_path() + "video/big_buck_bunny." + ext;
+        ext = get<0>(GetParam());
+        apiPref = get<1>(GetParam());
+        video_file = BunnyParameters::getFilename(String(".") + ext);
     }
     void doFrameCountTest()
     {
-        VideoCapture cap(video_file);
+        if (!videoio_registry::hasBackend(apiPref))
+            throw SkipTestException(cv::String("Backend is not available/disabled: ") + cv::videoio_registry::getBackendName(apiPref));
+        VideoCapture cap;
+        EXPECT_NO_THROW(cap.open(video_file, apiPref));
         if (!cap.isOpened())
         {
-            std::cout << "SKIP test: Can't open video: " << video_file << std::endl;
+            std::cout << "SKIP test: backend " << apiPref << " can't open the video: " << video_file << std::endl;
             return;
         }
 
-        const int width_gt = 672;
-        const int height_gt = 384;
-        const int fps_gt = 24;
-        const double time_gt = 5.21;
-        const int count_gt = cvRound(fps_gt * time_gt); // 5.21 sec * 24 fps
+        Size actual;
+        EXPECT_NO_THROW(actual = Size((int)cap.get(CAP_PROP_FRAME_WIDTH),
+                                      (int)cap.get(CAP_PROP_FRAME_HEIGHT)));
+        EXPECT_EQ(bunny_param.getWidth(), actual.width);
+        EXPECT_EQ(bunny_param.getHeight(), actual.height);
 
-        EXPECT_EQ(width_gt, cap.get(CAP_PROP_FRAME_WIDTH));
-        EXPECT_EQ(height_gt, cap.get(CAP_PROP_FRAME_HEIGHT));
-
-        double fps_prop = cap.get(CAP_PROP_FPS);
+        double fps_prop = 0;
+        EXPECT_NO_THROW(fps_prop = cap.get(CAP_PROP_FPS));
         if (fps_prop > 0)
-            EXPECT_NEAR(fps_prop, fps_gt, 1);
+            EXPECT_NEAR(fps_prop, bunny_param.getFps(), 1);
         else
             std::cout << "FPS is not available. SKIP check." << std::endl;
 
-        int count_prop = (int)cap.get(CAP_PROP_FRAME_COUNT);
-
+        int count_prop = 0;
+        EXPECT_NO_THROW(count_prop = (int)cap.get(CAP_PROP_FRAME_COUNT));
         // mpg file reports 5.08 sec * 24 fps => property returns 122 frames
         // but actual number of frames returned is 125
         if (ext != "mpg")
         {
             if (count_prop > 0)
-                EXPECT_EQ(count_gt, count_prop);
+            {
+                EXPECT_EQ(bunny_param.getCount(), count_prop);
+            }
         }
 
         int count_actual = 0;
         while (cap.isOpened())
         {
             Mat frame;
-            cap >> frame;
+            EXPECT_NO_THROW(cap >> frame);
             if (frame.empty())
                 break;
-            EXPECT_EQ(width_gt, frame.cols);
-            EXPECT_EQ(height_gt, frame.rows);
+            EXPECT_EQ(bunny_param.getWidth(), frame.cols);
+            EXPECT_EQ(bunny_param.getHeight(), frame.rows);
             count_actual += 1;
         }
         if (count_prop > 0)
-            EXPECT_NEAR(count_gt, count_actual, 1);
+        {
+            EXPECT_NEAR(bunny_param.getCount(), count_actual, 1);
+        }
         else
             std::cout << "Frames counter is not available. Actual frames: " << count_actual << ". SKIP check." << std::endl;
     }
 };
 
-typedef tuple<string, string, float> Ext_Fourcc_PSNR;
+//==================================================================================================
+
+struct Ext_Fourcc_PSNR
+{
+    string ext;
+    string fourcc;
+    float PSNR;
+    VideoCaptureAPIs api;
+};
 typedef tuple<Size, Ext_Fourcc_PSNR> Size_Ext_Fourcc_PSNR;
 
-class Videoio_Synthetic : public Videoio_Test_Base, public testing::TestWithParam<Size_Ext_Fourcc_PSNR>
+class videoio_synthetic : public Videoio_Test_Base, public testing::TestWithParam<Size_Ext_Fourcc_PSNR>
 {
     Size frame_size;
     int fourcc;
@@ -210,32 +242,34 @@ class Videoio_Synthetic : public Videoio_Test_Base, public testing::TestWithPara
     int frame_count;
     double fps;
 public:
-    Videoio_Synthetic()
+    videoio_synthetic()
     {
         frame_size = get<0>(GetParam());
-        const Ext_Fourcc_PSNR &param = get<1>(GetParam());
-        ext = get<0>(param);
-        fourcc = fourccFromString(get<1>(param));
-        PSNR_GT = get<2>(param);
+        const Ext_Fourcc_PSNR p = get<1>(GetParam());
+        ext = p.ext;
+        fourcc = fourccFromString(p.fourcc);
+        PSNR_GT = p.PSNR;
         video_file = cv::tempfile((fourccToString(fourcc) + "." + ext).c_str());
         frame_count = 100;
         fps = 25.;
-    }
-    void SetUp()
-    {
-        Mat img(frame_size, CV_8UC3);
-        VideoWriter writer(video_file, fourcc, fps, frame_size, true);
-        ASSERT_TRUE(writer.isOpened());
-        for(int i = 0; i < frame_count; ++i )
-        {
-            generateFrame(i, frame_count, img);
-            writer << img;
-        }
-        writer.release();
+        apiPref = p.api;
     }
     void TearDown()
     {
         remove(video_file.c_str());
+    }
+    virtual void writeVideo()
+    {
+        Mat img(frame_size, CV_8UC3);
+        VideoWriter writer;
+        EXPECT_NO_THROW(writer.open(video_file, apiPref, fourcc, fps, frame_size, true));
+        ASSERT_TRUE(writer.isOpened());
+        for(int i = 0; i < frame_count; ++i )
+        {
+            generateFrame(i, frame_count, img);
+            EXPECT_NO_THROW(writer << img);
+        }
+        EXPECT_NO_THROW(writer.release());
     }
     virtual void checkFrameContent(Mat & img, int idx)
     {
@@ -257,10 +291,9 @@ public:
         if (fourcc == VideoWriter::fourcc('M', 'P', 'E', 'G') && ext == "mkv")
             expected_frame_count.end += 1;
 
-        // Hack! Some GStreamer encoding pipelines drop last frame in the video
-#ifdef HAVE_GSTREAMER
-        expected_frame_count.start -= 1;
-#endif
+        // Workaround for some gstreamer pipelines
+        if (apiPref == CAP_GSTREAMER)
+            expected_frame_count.start -= 1;
 
         ASSERT_LE(expected_frame_count.start, actual);
         ASSERT_GE(expected_frame_count.end, actual);
@@ -271,74 +304,116 @@ public:
 
 //==================================================================================================
 
+static const VideoCaptureAPIs backend_params[] = {
+#ifdef HAVE_AVFOUNDATION
+   CAP_AVFOUNDATION,
+#endif
 
-string bunny_params[] = {
-#ifdef HAVE_VIDEO_INPUT
-    string("avi"),
+#ifdef HAVE_MSMF
+    CAP_MSMF,
+#endif
+
+    CAP_GSTREAMER,
+    CAP_FFMPEG,
+
+#ifdef HAVE_XINE
+    CAP_XINE,
+#endif
+
+    CAP_OPENCV_MJPEG
+    // CAP_INTEL_MFX
+};
+
+static const string bunny_params[] = {
+    string("wmv"),
     string("mov"),
     string("mp4"),
     string("mpg"),
-    string("wmv"),
-#endif
+    string("avi"),
+    string("h264"),
+    string("h265"),
     string("mjpg.avi")
 };
 
-TEST_P(Videoio_Bunny, read_position) { doTest(); }
+TEST_P(videoio_bunny, read_position) { doTest(); }
 
-TEST_P(Videoio_Bunny, frame_count) { doFrameCountTest(); }
+TEST_P(videoio_bunny, frame_count) { doFrameCountTest(); }
 
-INSTANTIATE_TEST_CASE_P(videoio, Videoio_Bunny,
-                        testing::ValuesIn(bunny_params));
+INSTANTIATE_TEST_CASE_P(videoio, videoio_bunny,
+                          testing::Combine(
+                              testing::ValuesIn(bunny_params),
+                              testing::ValuesIn(backend_params)));
 
 
 //==================================================================================================
 
-inline Ext_Fourcc_PSNR makeParam(const char * ext, const char * fourcc, float psnr)
+inline Ext_Fourcc_PSNR makeParam(const char * ext, const char * fourcc, float psnr, VideoCaptureAPIs apipref)
 {
-    return make_tuple(string(ext), string(fourcc), (float)psnr);
+    Ext_Fourcc_PSNR res;
+    res.ext = ext;
+    res.fourcc = fourcc;
+    res.PSNR = psnr;
+    res.api = apipref;
+    return res;
 }
 
-Ext_Fourcc_PSNR synthetic_params[] = {
+inline static std::ostream &operator<<(std::ostream &out, const Ext_Fourcc_PSNR &p)
+{
+    out << "FOURCC(" << p.fourcc << "), ." << p.ext << ", " << p.api << ", " << p.PSNR << "dB"; return out;
+}
 
-#if defined(HAVE_VIDEO_INPUT) && defined(HAVE_VIDEO_OUTPUT) && !defined(__APPLE__)
+static Ext_Fourcc_PSNR synthetic_params[] = {
 
 #ifdef HAVE_MSMF
-
 #if !defined(_M_ARM)
-    makeParam("wmv", "WMV1", 30.f),
-    makeParam("wmv", "WMV2", 30.f),
+    makeParam("wmv", "WMV1", 30.f, CAP_MSMF),
+    makeParam("wmv", "WMV2", 30.f, CAP_MSMF),
 #endif
-    makeParam("wmv", "WMV3", 30.f),
-    makeParam("avi", "H264", 30.f),
-    makeParam("wmv", "WVC1", 30.f),
-
-#else // HAVE_MSMF
-
-    makeParam("avi", "XVID", 30.f),
-    makeParam("avi", "MPEG", 30.f),
-    makeParam("avi", "IYUV", 30.f),
-    makeParam("mkv", "XVID", 30.f),
-    makeParam("mkv", "MPEG", 30.f),
-    makeParam("mkv", "MJPG", 30.f),
-#ifndef HAVE_GSTREAMER
-    makeParam("mov", "mp4v", 30.f),
+    makeParam("wmv", "WMV3", 30.f, CAP_MSMF),
+    makeParam("wmv", "WVC1", 30.f, CAP_MSMF),
+    makeParam("mov", "H264", 30.f, CAP_MSMF),
 #endif
 
-#endif // HAVE_MSMF
+#ifdef HAVE_AVFOUNDATION
+   makeParam("mov", "H264", 30.f, CAP_AVFOUNDATION),
+   makeParam("mov", "MJPG", 30.f, CAP_AVFOUNDATION),
+   makeParam("mp4", "H264", 30.f, CAP_AVFOUNDATION),
+   makeParam("mp4", "MJPG", 30.f, CAP_AVFOUNDATION),
+   makeParam("m4v", "H264", 30.f, CAP_AVFOUNDATION),
+   makeParam("m4v", "MJPG", 30.f, CAP_AVFOUNDATION),
+#endif
 
-#endif // HAVE_VIDEO_INPUT && HAVE_VIDEO_OUTPUT ...
+    makeParam("avi", "XVID", 30.f, CAP_FFMPEG),
+    makeParam("avi", "MPEG", 30.f, CAP_FFMPEG),
+    makeParam("avi", "IYUV", 30.f, CAP_FFMPEG),
+    makeParam("avi", "MJPG", 30.f, CAP_FFMPEG),
 
-    makeParam("avi", "MJPG", 30.f)
+    makeParam("mkv", "XVID", 30.f, CAP_FFMPEG),
+    makeParam("mkv", "MPEG", 30.f, CAP_FFMPEG),
+    makeParam("mkv", "MJPG", 30.f, CAP_FFMPEG),
+
+    makeParam("avi", "MPEG", 30.f, CAP_GSTREAMER),
+    makeParam("avi", "MJPG", 30.f, CAP_GSTREAMER),
+    makeParam("avi", "H264", 30.f, CAP_GSTREAMER),
+
+    makeParam("mkv", "MPEG", 30.f, CAP_GSTREAMER),
+    makeParam("mkv", "MJPG", 30.f, CAP_GSTREAMER),
+    makeParam("mkv", "H264", 30.f, CAP_GSTREAMER),
+
+    makeParam("avi", "MJPG", 30.f, CAP_OPENCV_MJPEG),
 };
+
 
 Size all_sizes[] = {
     Size(640, 480),
     Size(976, 768)
 };
 
-TEST_P(Videoio_Synthetic, write_read_position) { doTest(); }
+TEST_P(videoio_synthetic, write_read_position) { doTest(); }
 
-INSTANTIATE_TEST_CASE_P(videoio, Videoio_Synthetic,
+INSTANTIATE_TEST_CASE_P(videoio, videoio_synthetic,
                         testing::Combine(
                             testing::ValuesIn(all_sizes),
                             testing::ValuesIn(synthetic_params)));
+
+} // namespace

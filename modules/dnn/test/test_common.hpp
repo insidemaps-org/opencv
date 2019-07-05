@@ -1,60 +1,131 @@
-/*M///////////////////////////////////////////////////////////////////////////////////////
-//
-//  IMPORTANT: READ BEFORE DOWNLOADING, COPYING, INSTALLING OR USING.
-//
-//  By downloading, copying, installing or using the software you agree to this license.
-//  If you do not agree to this license, do not download, install,
-//  copy or use the software.
-//
-//
-//                           License Agreement
-//                For Open Source Computer Vision Library
-//
-// Copyright (C) 2013, OpenCV Foundation, all rights reserved.
-// Third party copyrights are property of their respective owners.
-//
-// Redistribution and use in source and binary forms, with or without modification,
-// are permitted provided that the following conditions are met:
-//
-//   * Redistribution's of source code must retain the above copyright notice,
-//     this list of conditions and the following disclaimer.
-//
-//   * Redistribution's in binary form must reproduce the above copyright notice,
-//     this list of conditions and the following disclaimer in the documentation
-//     and/or other materials provided with the distribution.
-//
-//   * The name of the copyright holders may not be used to endorse or promote products
-//     derived from this software without specific prior written permission.
-//
-// This software is provided by the copyright holders and contributors "as is" and
-// any express or implied warranties, including, but not limited to, the implied
-// warranties of merchantability and fitness for a particular purpose are disclaimed.
-// In no event shall the Intel Corporation or contributors be liable for any direct,
-// indirect, incidental, special, exemplary, or consequential damages
-// (including, but not limited to, procurement of substitute goods or services;
-// loss of use, data, or profits; or business interruption) however caused
-// and on any theory of liability, whether in contract, strict liability,
-// or tort (including negligence or otherwise) arising in any way out of
-// the use of this software, even if advised of the possibility of such damage.
-//
-//M*/
+// This file is part of OpenCV project.
+// It is subject to the license terms in the LICENSE file found in the top-level directory
+// of this distribution and at http://opencv.org/license.html.
 
 #ifndef __OPENCV_TEST_COMMON_HPP__
 #define __OPENCV_TEST_COMMON_HPP__
 
-inline const std::string &getOpenCVExtraDir()
+#include "opencv2/dnn/utils/inference_engine.hpp"
+
+#ifdef HAVE_OPENCL
+#include "opencv2/core/ocl.hpp"
+#endif
+
+
+namespace cv { namespace dnn {
+CV__DNN_INLINE_NS_BEGIN
+
+void PrintTo(const cv::dnn::Backend& v, std::ostream* os);
+void PrintTo(const cv::dnn::Target& v, std::ostream* os);
+using opencv_test::tuple;
+using opencv_test::get;
+void PrintTo(const tuple<cv::dnn::Backend, cv::dnn::Target> v, std::ostream* os);
+
+CV__DNN_INLINE_NS_END
+}} // namespace cv::dnn
+
+
+
+namespace opencv_test {
+
+using namespace cv::dnn;
+
+static inline const std::string &getOpenCVExtraDir()
 {
     return cvtest::TS::ptr()->get_data_path();
 }
 
-inline void normAssert(cv::InputArray ref, cv::InputArray test, const char *comment = "",
-                       double l1 = 0.00001, double lInf = 0.0001)
-{
-    double normL1 = cvtest::norm(ref, test, cv::NORM_L1) / ref.getMat().total();
-    EXPECT_LE(normL1, l1) << comment;
+void normAssert(
+        cv::InputArray ref, cv::InputArray test, const char *comment = "",
+        double l1 = 0.00001, double lInf = 0.0001);
 
-    double normInf = cvtest::norm(ref, test, cv::NORM_INF);
-    EXPECT_LE(normInf, lInf) << comment;
-}
+std::vector<cv::Rect2d> matToBoxes(const cv::Mat& m);
+
+void normAssertDetections(
+        const std::vector<int>& refClassIds,
+        const std::vector<float>& refScores,
+        const std::vector<cv::Rect2d>& refBoxes,
+        const std::vector<int>& testClassIds,
+        const std::vector<float>& testScores,
+        const std::vector<cv::Rect2d>& testBoxes,
+        const char *comment = "", double confThreshold = 0.0,
+        double scores_diff = 1e-5, double boxes_iou_diff = 1e-4);
+
+// For SSD-based object detection networks which produce output of shape 1x1xNx7
+// where N is a number of detections and an every detection is represented by
+// a vector [batchId, classId, confidence, left, top, right, bottom].
+void normAssertDetections(
+        cv::Mat ref, cv::Mat out, const char *comment = "",
+        double confThreshold = 0.0, double scores_diff = 1e-5,
+        double boxes_iou_diff = 1e-4);
+
+bool readFileInMemory(const std::string& filename, std::string& content);
+
+#ifdef HAVE_INF_ENGINE
+bool validateVPUType();
+#endif
+
+testing::internal::ParamGenerator< tuple<Backend, Target> > dnnBackendsAndTargets(
+        bool withInferenceEngine = true,
+        bool withHalide = false,
+        bool withCpuOCV = true,
+        bool withVkCom = true
+);
+
+
+class DNNTestLayer : public TestWithParam<tuple<Backend, Target> >
+{
+public:
+    dnn::Backend backend;
+    dnn::Target target;
+    double default_l1, default_lInf;
+
+    DNNTestLayer()
+    {
+        backend = (dnn::Backend)(int)get<0>(GetParam());
+        target = (dnn::Target)(int)get<1>(GetParam());
+        getDefaultThresholds(backend, target, &default_l1, &default_lInf);
+    }
+
+    static void getDefaultThresholds(int backend, int target, double* l1, double* lInf)
+    {
+        if (target == DNN_TARGET_OPENCL_FP16 || target == DNN_TARGET_MYRIAD)
+        {
+            *l1 = 4e-3;
+            *lInf = 2e-2;
+        }
+        else
+        {
+            *l1 = 1e-5;
+            *lInf = 1e-4;
+        }
+    }
+
+    static void checkBackend(int backend, int target, Mat* inp = 0, Mat* ref = 0)
+    {
+        if (backend == DNN_BACKEND_INFERENCE_ENGINE && target == DNN_TARGET_MYRIAD)
+        {
+            if (inp && ref && inp->dims == 4 && ref->dims == 4 &&
+                inp->size[0] != 1 && inp->size[0] != ref->size[0])
+                throw SkipTestException("Inconsistent batch size of input and output blobs for Myriad plugin");
+        }
+    }
+
+protected:
+    void checkBackend(Mat* inp = 0, Mat* ref = 0)
+    {
+        checkBackend(backend, target, inp, ref);
+    }
+};
+
+} // namespace
+
+
+// src/op_inf_engine.hpp
+#define INF_ENGINE_VER_MAJOR_GT(ver) (((INF_ENGINE_RELEASE) / 10000) > ((ver) / 10000))
+#define INF_ENGINE_VER_MAJOR_GE(ver) (((INF_ENGINE_RELEASE) / 10000) >= ((ver) / 10000))
+#define INF_ENGINE_VER_MAJOR_LT(ver) (((INF_ENGINE_RELEASE) / 10000) < ((ver) / 10000))
+#define INF_ENGINE_VER_MAJOR_LE(ver) (((INF_ENGINE_RELEASE) / 10000) <= ((ver) / 10000))
+#define INF_ENGINE_VER_MAJOR_EQ(ver) (((INF_ENGINE_RELEASE) / 10000) == ((ver) / 10000))
 
 #endif

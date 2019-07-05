@@ -6,6 +6,7 @@
 
 #include "dnn_converters.hpp"
 
+#define LOG_TAG "org.opencv.dnn"
 
 void Mat_to_MatShape(cv::Mat& mat, MatShape& matshape)
 {
@@ -17,18 +18,6 @@ void Mat_to_MatShape(cv::Mat& mat, MatShape& matshape)
 void MatShape_to_Mat(MatShape& matshape, cv::Mat& mat)
 {
     mat = cv::Mat(matshape, true);
-}
-
-void Mat_to_vector_size_t(cv::Mat& mat, std::vector<size_t>& v_size_t)
-{
-    v_size_t.clear();
-    CHECK_MAT(mat.type()==CV_32SC1 && mat.cols==1);
-    v_size_t = (std::vector<size_t>) mat;
-}
-
-void vector_size_t_to_Mat(std::vector<size_t>& v_size_t, cv::Mat& mat)
-{
-    mat = cv::Mat(v_size_t, true);
 }
 
 std::vector<MatShape> List_to_vector_MatShape(JNIEnv* env, jobject list)
