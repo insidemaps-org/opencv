@@ -170,7 +170,7 @@ output_message( j_common_ptr cinfo )
     (*cinfo->err->format_message) (cinfo, buffer);
 
     /* Default OpenCV error handling instead of print */
-    CV_Error(CV_StsError, buffer);
+    CV_Error(Error::StsError, buffer);
 }
 
 
