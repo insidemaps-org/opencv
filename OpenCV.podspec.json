@@ -1,6 +1,6 @@
 {
   "name": "OpenCV",
-  "version": "3.3.im-patched-webp-with-objdetect",
+  "version": "4.1.0-with-objdetect",
   "summary": "OpenCV (Computer Vision) for iOS.",
   "homepage": "http://opencv.org",
   "description": "OpenCV: open source computer vision library\n\n    Homepage: http://opencv.org\n    Online docs: http://docs.opencv.org\n    Q&A forum: http://answers.opencv.org\n    Dev zone: http://code.opencv.org",
