@@ -11,7 +11,7 @@
   "authors": "https://pytorch.org",
   "source": {
 
-    "http": "https://github.com/insidemaps-org/opencv/releases/download/1.3.torch/torch_cpu.framework-1.3.zip"
+    "http": "https://github.com/insidemaps-org/opencv/releases/download/torch-2020.10.01/torch_cpu.framework.zip"
   },
   "platforms": {
     "ios": "4.0"
