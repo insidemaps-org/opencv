@@ -14,7 +14,7 @@
     "http": "https://github.com/insidemaps-org/opencv/releases/download/torch_no_warnings_2021_07_20/torch_cpu.framework.zip"
   },
   "platforms": {
-    "ios": "12.0"
+    "ios": "4.0"
   },
   "preserve_paths": "torch_cpu.framework",
   "source_files": "torch_cpu.framework/Versions/A/Headers/**/*{.h,.hpp}",
