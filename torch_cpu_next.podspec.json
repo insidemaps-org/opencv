@@ -11,7 +11,7 @@
   "authors": "https://pytorch.org",
   "source": {
 
-    "http": "https://github.com/insidemaps-org/opencv/releases/download/torch_no_warnings_2021_07_20/torch_cpu.framework.zip"
+    "http": "https://github.com/insidemaps-org/opencv/releases/download/torch_no_warnings_2021_07_20/torch_cpu.framework.1.8.55b431b17aba504ae7b75f6f97b4437101e50f38.target.12.0.zip"
   },
   "platforms": {
     "ios": "4.0"
