@@ -44,15 +44,13 @@
 #include <iterator>
 #include <limits>
 
+#include <opencv2/core/utils/logger.hpp>
+
+// Requires CMake flag: DEBUG_opencv_features2d=ON
 //#define DEBUG_BLOB_DETECTOR
 
 #ifdef DEBUG_BLOB_DETECTOR
-#  include "opencv2/opencv_modules.hpp"
-#  ifdef HAVE_OPENCV_HIGHGUI
-#    include "opencv2/highgui.hpp"
-#  else
-#    undef DEBUG_BLOB_DETECTOR
-#  endif
+#include "opencv2/highgui.hpp"
 #endif
 
 namespace cv
@@ -200,13 +198,13 @@ void SimpleBlobDetectorImpl::findBlobs(InputArray _image, InputArray _binaryImag
     findContours(binaryImage, contours, RETR_LIST, CHAIN_APPROX_NONE);
 
 #ifdef DEBUG_BLOB_DETECTOR
-    //  Mat keypointsImage;
-    //  cvtColor( binaryImage, keypointsImage, CV_GRAY2RGB );
-    //
-    //  Mat contoursImage;
-    //  cvtColor( binaryImage, contoursImage, CV_GRAY2RGB );
-    //  drawContours( contoursImage, contours, -1, Scalar(0,255,0) );
-    //  imshow("contours", contoursImage );
+    Mat keypointsImage;
+    cvtColor(binaryImage, keypointsImage, COLOR_GRAY2RGB);
+
+    Mat contoursImage;
+    cvtColor(binaryImage, contoursImage, COLOR_GRAY2RGB);
+    drawContours( contoursImage, contours, -1, Scalar(0,255,0) );
+    imshow("contours", contoursImage );
 #endif
 
     for (size_t contourIdx = 0; contourIdx < contours.size(); contourIdx++)
@@ -261,7 +259,7 @@ void SimpleBlobDetectorImpl::findBlobs(InputArray _image, InputArray _binaryImag
         {
             std::vector < Point > hull;
             convexHull(contours[contourIdx], hull);
-            double area = contourArea(contours[contourIdx]);
+            double area = moms.m00;
             double hullArea = contourArea(hull);
             if (fabs(hullArea) < DBL_EPSILON)
                 continue;
@@ -296,12 +294,12 @@ void SimpleBlobDetectorImpl::findBlobs(InputArray _image, InputArray _binaryImag
 
 
 #ifdef DEBUG_BLOB_DETECTOR
-        //    circle( keypointsImage, center.location, 1, Scalar(0,0,255), 1 );
+        circle( keypointsImage, center.location, 1, Scalar(0,0,255), 1 );
 #endif
     }
 #ifdef DEBUG_BLOB_DETECTOR
-    //  imshow("bk", keypointsImage );
-    //  waitKey();
+    imshow("bk", keypointsImage );
+    waitKey();
 #endif
 }
 
@@ -319,6 +317,19 @@ void SimpleBlobDetectorImpl::detect(InputArray image, std::vector<cv::KeyPoint>&
 
     if (grayscaleImage.type() != CV_8UC1) {
         CV_Error(Error::StsUnsupportedFormat, "Blob detector only supports 8-bit images!");
+    }
+
+    CV_CheckGT(params.thresholdStep, 0.0f, "");
+    if (params.minThreshold + params.thresholdStep >= params.maxThreshold)
+    {
+        // https://github.com/opencv/opencv/issues/6667
+        CV_LOG_ONCE_INFO(NULL, "SimpleBlobDetector: params.minDistBetweenBlobs is ignored for case with single threshold");
+#if 0  // OpenCV 5.0
+        CV_CheckEQ(params.minRepeatability, 1u, "Incompatible parameters for case with single threshold");
+#else
+        if (params.minRepeatability != 1)
+            CV_LOG_WARNING(NULL, "SimpleBlobDetector: params.minRepeatability=" << params.minRepeatability << " is incompatible for case with single threshold. Empty result is expected.");
+#endif
     }
 
     std::vector < std::vector<Center> > centers;
@@ -342,7 +353,7 @@ void SimpleBlobDetectorImpl::detect(InputArray image, std::vector<cv::KeyPoint>&
                     centers[j].push_back(curCenters[i]);
 
                     size_t k = centers[j].size() - 1;
-                    while( k > 0 && centers[j][k].radius < centers[j][k-1].radius )
+                    while( k > 0 && curCenters[i].radius < centers[j][k-1].radius )
                     {
                         centers[j][k] = centers[j][k-1];
                         k--;

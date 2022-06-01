@@ -18,10 +18,7 @@ endif()
 
 add_subdirectory(bindings)
 
-if(NOT OPENCV_SKIP_PYTHON_LOADER)
-  include("./python_loader.cmake")
-  message(STATUS "OpenCV Python: during development append to PYTHONPATH: ${CMAKE_BINARY_DIR}/python_loader")
-endif()
+add_subdirectory(test)
 
 if(__disable_python2)
   ocv_module_disable_(python2)
@@ -39,6 +36,7 @@ add_subdirectory(python3)
 else()  # standalone build
 
 cmake_minimum_required(VERSION 2.8.12)
+project(OpenCVPython CXX C)
 include("./standalone.cmake")
 
 endif()

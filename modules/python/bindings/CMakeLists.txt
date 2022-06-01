@@ -8,10 +8,14 @@ set(OPENCV_PYTHON_BINDINGS_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE INTERNAL "")
 # This file is included from a subdirectory
 set(PYTHON_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../")
 
+if(NOT OPENCV_SKIP_PYTHON_LOADER)
+  include("${PYTHON_SOURCE_DIR}/python_loader.cmake")
+endif()
+
 # get list of modules to wrap
 set(OPENCV_PYTHON_MODULES)
 foreach(m ${OPENCV_MODULES_BUILD})
-  if (";${OPENCV_MODULE_${m}_WRAPPERS};" MATCHES ";${MODULE_NAME};" AND HAVE_${m})
+  if (";${OPENCV_MODULE_${m}_WRAPPERS};" MATCHES ";python;" AND HAVE_${m})
     list(APPEND OPENCV_PYTHON_MODULES ${m})
     #message(STATUS "\t${m}")
   endif()
@@ -26,9 +30,18 @@ foreach(m ${OPENCV_PYTHON_MODULES})
       list(APPEND opencv_hdrs "${hdr}")
     endif()
   endforeach()
+
+  # both wrapping and C++ implementation
+  file(GLOB hdr2 ${OPENCV_MODULE_${m}_LOCATION}/misc/python/python_*.hpp)
+  list(SORT hdr2)
+  list(APPEND opencv_hdrs ${hdr2})
+  list(APPEND opencv_userdef_hdrs ${hdr2})
+
   file(GLOB hdr ${OPENCV_MODULE_${m}_LOCATION}/misc/python/shadow*.hpp)
+  list(SORT hdr)
   list(APPEND opencv_hdrs ${hdr})
   file(GLOB userdef_hdrs ${OPENCV_MODULE_${m}_LOCATION}/misc/python/pyopencv*.hpp)
+  list(SORT userdef_hdrs)
   list(APPEND opencv_userdef_hdrs ${userdef_hdrs})
 endforeach(m)
 
@@ -51,11 +64,13 @@ if(NOT HAVE_CUDA)
 endif()
 
 set(cv2_generated_files
-    "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_include.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_enums.h"
     "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_funcs.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_include.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_modules.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_modules_content.h"
     "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_types.h"
-    "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_type_reg.h"
-    "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_ns_reg.h"
+    "${CMAKE_CURRENT_BINARY_DIR}/pyopencv_generated_types_content.h"
     "${OPENCV_PYTHON_SIGNATURES_FILE}"
 )
 

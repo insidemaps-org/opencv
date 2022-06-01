@@ -97,7 +97,7 @@ cvReadChainPoint( CvChainPtReader * reader )
 
         reader->ptr = ptr;
         reader->code = (schar)code;
-        assert( (code & ~7) == 0 );
+        CV_Assert( (code & ~7) == 0 );
         reader->pt.x = pt.x + icvCodeDeltas[code].x;
         reader->pt.y = pt.y + icvCodeDeltas[code].y;
     }
@@ -625,7 +625,8 @@ icvFetchContour( schar                  *ptr,
 
 /*
    trace contour until certain point is met.
-   returns 1 if met, 0 else.
+   returns 1 if met and this is the last contour
+   encountered by a raster scan reaching the point, 0 else.
 */
 static int
 icvTraceContour( schar *ptr, int step, schar *stop_ptr, int is_hole )
@@ -668,14 +669,39 @@ icvTraceContour( schar *ptr, int step, schar *stop_ptr, int is_hole )
                     break;
             }
 
-            if( i3 == stop_ptr || (i4 == i0 && i3 == i1) )
+            if (i3 == stop_ptr) {
+                if (!(*i3 & 0x80)) {
+                    /* it's the only contour */
+                    return 1;
+                }
+
+                /* check if this is the last contour */
+                /* encountered during a raster scan  */
+                schar *i5;
+                int t = s;
+                while (true)
+                {
+                    t = (t - 1) & 7;
+                    i5 = i3 + deltas[t];
+                    if (*i5 != 0)
+                        break;
+                    if (t == 0)
+                        return 1;
+                }
+            }
+
+            if( (i4 == i0 && i3 == i1) )
                 break;
 
             i3 = i4;
             s = (s + 4) & 7;
         }                       /* end of border following loop */
     }
-    return i3 == stop_ptr;
+    else {
+        return i3 == stop_ptr;
+    }
+
+    return 0;
 }
 
 
@@ -1064,10 +1090,10 @@ cvFindNextContour( CvContourScanner scanner )
                     v_uint8 v_prev = vx_setall_u8((uchar)prev);
                     for (; x <= width - v_uint8::nlanes; x += v_uint8::nlanes)
                     {
-                        unsigned int mask = (unsigned int)v_signmask(vx_load((uchar*)(img + x)) != v_prev);
-                        if (mask)
+                        v_uint8 vmask = (vx_load((uchar*)(img + x)) != v_prev);
+                        if (v_check_any(vmask))
                         {
-                            p = img[(x += cv::trailingZeros32(mask))];
+                            p = img[(x += v_scan_forward(vmask))];
                             goto _next_contour;
                         }
                     }
@@ -1161,7 +1187,7 @@ cvFindNextContour( CvContourScanner scanner )
                     }
 
                     /* hole flag of the parent must differ from the flag of the contour */
-                    assert( par_info->is_hole != is_hole );
+                    CV_Assert( par_info->is_hole != is_hole );
                     if( par_info->contour == 0 )        /* removed contour */
                         goto resume_scan;
                 }
@@ -1331,10 +1357,10 @@ inline int findStartContourPoint(uchar *src_data, CvSize img_size, int j)
     v_uint8 v_zero = vx_setzero_u8();
     for (; j <= img_size.width - v_uint8::nlanes; j += v_uint8::nlanes)
     {
-        unsigned int mask = (unsigned int)v_signmask(vx_load((uchar*)(src_data + j)) != v_zero);
-        if (mask)
+        v_uint8 vmask = (vx_load((uchar*)(src_data + j)) != v_zero);
+        if (v_check_any(vmask))
         {
-            j += cv::trailingZeros32(mask);
+            j += v_scan_forward(vmask);
             return j;
         }
     }
@@ -1356,10 +1382,10 @@ inline int findEndContourPoint(uchar *src_data, CvSize img_size, int j)
         v_uint8 v_zero = vx_setzero_u8();
         for (; j <= img_size.width - v_uint8::nlanes; j += v_uint8::nlanes)
         {
-            unsigned int mask = (unsigned int)v_signmask(vx_load((uchar*)(src_data + j)) == v_zero);
-            if (mask)
+            v_uint8 vmask = (vx_load((uchar*)(src_data + j)) == v_zero);
+            if (v_check_any(vmask))
             {
-                j += cv::trailingZeros32(mask);
+                j += v_scan_forward(vmask);
                 return j;
             }
         }
