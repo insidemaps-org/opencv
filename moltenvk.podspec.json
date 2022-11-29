@@ -1,6 +1,6 @@
 {
   "name": "MoltenVK",
-  "version": "1.2.189.0",
+  "version": "1.3.231.1",
   "summary": "MoltenVK for iOS.",
   "homepage": "https://moltengl.com/moltenvk/",
   "description": "moltenvk",
@@ -11,7 +11,7 @@
   "authors": "https://moltengl.com/moltenvk/",
   "source": {
 
-    "http": "https://github.com/insidemaps-org/opencv/releases/download/MoltenVK-1.2.189.0/MoltenVK.xcframework.zip"
+    "http": "https://github.com/insidemaps-org/opencv/releases/download/MoltenVK-1.3.231.1/MoltenVK.xcframework.zip"
   },
   "platforms": {
     "ios": "4.0"
