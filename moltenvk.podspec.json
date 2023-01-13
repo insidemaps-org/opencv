@@ -11,20 +11,16 @@
   "authors": "https://moltengl.com/moltenvk/",
   "source": {
 
-    "http": "https://github.com/insidemaps-org/opencv/releases/download/MoltenVK-1.3.231.1/MoltenVK.xcframework.zip"
+    "http": "https://github.com/insidemaps-org/opencv/releases/download/MoltenVK-1.3.231.1/MoltenVK.zip"
   },
   "platforms": {
     "ios": "4.0"
   },
-  "preserve_paths": "moltenvk.xcframework",
-  // "source_files": "moltenvk.framework/Versions/A/Headers/**/*{.h,.hpp}",
-  // "public_header_files": "moltenvk.framework/Versions/A/Headers/**/*{.h,.hpp}",
-  // "vendored_frameworks": "moltenvk.xcframework",
-  // "header_dir": "opencv2",
-  // "header_mappings_dir": "moltenvk.framework/Versions/A/Headers/",
-  // "libraries": [
-  //   "stdc++"
-  // ],
+  "preserve_paths": "MoltenVK.xcframework",
+  "source_files": "include/**/*{.h,.hpp}",
+  "public_header_files": "include/**/*{.h,.hpp}",
+  "vendored_frameworks": "MoltenVK.xcframework",
+  "header_dir": "include",
   "frameworks": [
   ],
   "requires_arc": false
