@@ -10,8 +10,7 @@
   },
   "authors": "https://moltengl.com/moltenvk/",
   "source": {
-
-    "http": "https://github.com/insidemaps-org/opencv/releases/download/MoltenVK-1.3.243.0/MoltenVK.zip"
+    "http": "https://github.com/insidemaps-org/opencv/releases/download/MoltenVK-1.3.243.0.new/MoltenVK.xcframework.zip"
   },
   "platforms": {
     "ios": "4.0"
