@@ -146,7 +146,8 @@ class Builder:
             "-DBUILD_opencv_video=OFF",
             "-DBUILD_opencv_videostab=OFF"
             "-DOPENCV_INCLUDE_INSTALL_PATH=include",
-            "-DOPENCV_3P_LIB_INSTALL_PATH=lib/3rdparty"
+            "-DOPENCV_3P_LIB_INSTALL_PATH=lib/3rdparty",
+            "-DOPENCV_IO_ENABLE_OPENEXR=ON"
         ] + ([
             "-DBUILD_SHARED_LIBS=ON",
             "-DCMAKE_MACOSX_BUNDLE=ON",
@@ -244,7 +245,7 @@ class Builder:
             libname = "libopencv_merged.a"
 
         # copy headers from one of build folders
-        shutil.copytree(os.path.join(builddirs[0], "install", "include", "opencv2"), os.path.join(dstdir, "Headers"))
+        shutil.copytree(os.path.join(builddirs[0], "install", "include", "opencv4"), os.path.join(dstdir, "Headers"))
 
         # make universal static lib
         libs = [os.path.join(d, "lib", "Release", libname) for d in builddirs]
