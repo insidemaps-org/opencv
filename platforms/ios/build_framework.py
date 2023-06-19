@@ -146,8 +146,7 @@ class Builder:
             "-DBUILD_opencv_video=OFF",
             "-DBUILD_opencv_videostab=OFF"
             "-DOPENCV_INCLUDE_INSTALL_PATH=include",
-            "-DOPENCV_3P_LIB_INSTALL_PATH=lib/3rdparty",
-            "-DOPENCV_IO_ENABLE_OPENEXR=ON"
+            "-DOPENCV_3P_LIB_INSTALL_PATH=lib/3rdparty"
         ] + ([
             "-DBUILD_SHARED_LIBS=ON",
             "-DCMAKE_MACOSX_BUNDLE=ON",
