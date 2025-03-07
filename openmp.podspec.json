@@ -11,7 +11,7 @@
   "authors": "https://www.openmp.org/",
   "source": {
 
-    "http": "https://github.com/insidemaps-org/opencv/releases/download/OpenMP-17.0.6/OpenMP-17.0.6.zip"
+    "http": "https://github.com/insidemaps-org/opencv/releases/download/OpenMP-17.0.6/OpenMP.zip"
   },
   "platforms": {
     "ios": "12.0"
