@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "OpenCV",
     platforms: [
-        .macOS(.v11), .iOS(.v16), .macCatalyst(.v16)
+        .macOS(.v11), .iOS(.v12), .macCatalyst(.v16)
     ],
     products: [
         .library(
