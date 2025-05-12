@@ -1,10 +1,10 @@
-// swift-tools-version:5.6
+// swift-tools-version:5.9
 import PackageDescription
 
 let package = Package(
     name: "OpenCV",
     platforms: [
-        .iOS(.v12)
+        .macOS(.v11), .iOS(.v16), .macCatalyst(.v16)
     ],
     products: [
         .library(
